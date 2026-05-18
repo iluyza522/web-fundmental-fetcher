@@ -19,6 +19,9 @@ Thumbs.db
 # Playwright artifacts
 .playwright-mcp/
 
+# Design docs (internal)
+docs/
+
 # Project
 config.toml
 data/
