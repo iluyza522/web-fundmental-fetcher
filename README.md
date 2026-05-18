@@ -72,7 +72,7 @@ ff config --cookie-zsxq "zsxq_access_token=复制的值"
 |--------|------|------|------|
 | 巨潮资讯 cninfo.com.cn | 公司公告 | 无 | HTTP API |
 | 东方财富 eastmoney.com | 券商研报 + 财经新闻 | 无 | HTTP API |
-| 知识星球 zsxq.com | 星球讨论/分析帖 | Cookie | HTTP API |
+| 知识星球 zsxq.com | 星球讨论/分析帖 | Cookie | HTTP API（`index` 1-based 页码翻页） |
 | 雪球 xueqiu.com | 社区讨论帖 | 无 | Playwright 浏览器 |
 
 ## 命令参考
