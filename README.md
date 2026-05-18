@@ -14,12 +14,6 @@ pip install -e .
 
 依赖：Python 3.11+, httpx, click, beautifulsoup4, lxml, toml, playwright, cloakbrowser, rich, pydantic
 
-### 安装 Playwright 浏览器（雪球需要）
-
-```bash
-playwright install chromium
-```
-
 ### Claude Code Skill（可选）
 
 在 Claude Code 中可通过 `/ff` 调用此工具：
