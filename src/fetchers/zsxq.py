@@ -121,18 +121,17 @@ class ZsxqFetcher(Fetcher):
         """Search topics by keyword using zsxq search API."""
         topics: list[dict] = []
         base = f"https://api.zsxq.com/v2/search/groups/{group_id}/topics"
-        idx = 0
+        page = 1
 
         async def _do(client: httpx.AsyncClient) -> list[dict]:
-            nonlocal idx
+            nonlocal page
             while len(topics) < limit:
                 params = {
                     "keyword": keyword,
                     "count": min(limit - len(topics), 20),
                     "order_by": "default",
+                    "index": page,
                 }
-                if idx:
-                    params["index"] = idx
 
                 resp = await client.get(base, params=params)
                 resp.raise_for_status()
@@ -154,9 +153,7 @@ class ZsxqFetcher(Fetcher):
                     if len(topics) >= limit:
                         break
 
-                idx = data.get("resp_data", {}).get("index", 0)
-                if not idx:
-                    break
+                page += 1
                 await asyncio.sleep(0.5)
             return topics
 

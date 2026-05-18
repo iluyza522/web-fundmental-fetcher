@@ -90,13 +90,13 @@ def search(ctx, stock_code, sources, days, limit):
                 )
                 for r in results:
                     storage.save(r)
-                click.echo(f"  {fetcher.name}: {len(results)} items")
                 total += len(results)
             except Exception as e:
                 click.echo(f"  {fetcher.name}: ERROR - {e}", err=True)
 
     asyncio.run(run())
-    click.echo(f"\nTotal saved: {total} items")
+    if total:
+        click.echo(f"search: {total} items")
 
 
 @main.group()
@@ -166,7 +166,8 @@ def zsxq_fetch(ctx, group, days, limit):
                 continue
             storage.save(r)
             saved += 1
-        click.echo(f"Saved {saved} items")
+        if saved:
+            click.echo(f"zsxq: {saved} items")
 
     asyncio.run(run())
 
@@ -209,7 +210,6 @@ def zsxq_search(ctx, keyword, limit):
             for g in groups:
                 gid = g.get("group_id")
                 name = g.get("name", "unknown")
-                click.echo(f"Searching {name}...")
                 topics = await fetcher.search_topics(
                     keyword, group_id=gid, limit=limit, client=client
                 )
@@ -231,9 +231,9 @@ def zsxq_search(ctx, keyword, limit):
                         path.write_text(
                             __import__("json").dumps(r.to_dict(), ensure_ascii=False, indent=2)
                         )
-                    click.echo(f"  [{r.published_at[:10]}] {r.title[:60]}")
                     found += 1
-        click.echo(f"\nFound and saved {found} items")
+        if found:
+            click.echo(f"zsxq: {found} items")
 
     asyncio.run(run())
 
@@ -284,7 +284,6 @@ def xueqiu_search(ctx, symbol, pages, sort, before, limit, headless):
 
     async def run():
         async with XueqiuScraper(headless=headless) as scraper:
-            click.echo(f"Fetching {symbol}...")
             community = await scraper.get_stock_community(
                 symbol=symbol,
                 max_pages=pages,
@@ -326,7 +325,7 @@ def xueqiu_search(ctx, symbol, pages, sort, before, limit, headless):
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = output_dir / f"{symbol}_community_{timestamp}.json"
             filepath.write_text(json.dumps(data, ensure_ascii=False, indent=2))
-            click.echo(f"Saved {len(community.posts)} posts to {filepath}")
+            click.echo(f"xueqiu: {len(community.posts)} posts")
 
     asyncio.run(run())
 
