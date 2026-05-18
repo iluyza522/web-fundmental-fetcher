@@ -1,0 +1,130 @@
+# Fundamental Fetcher
+
+A 股基本面文本信息搜集工具。从巨潮资讯（公司公告）、东方财富（研报+新闻）、知识星球、雪球等数据源搜集基本面文本信息，统一以 JSON 格式存入本地。
+
+## 安装
+
+### CLI 工具
+
+```bash
+git clone <repo-url>
+cd fundamental-fetcher
+pip install -e .
+```
+
+依赖：Python 3.11+, httpx, click, beautifulsoup4, lxml, toml, playwright, cloakbrowser, rich, pydantic
+
+### 安装 Playwright 浏览器（雪球需要）
+
+```bash
+playwright install chromium
+```
+
+### Claude Code Skill（可选）
+
+在 Claude Code 中可通过 `/ff` 调用此工具：
+
+```bash
+mkdir -p ~/.claude/skills/ff
+cp SKILL.md ~/.claude/skills/ff/SKILL.md
+```
+
+## 使用
+
+```bash
+# 按股票代码搜索（公告 + 研报 + 新闻）
+ff search 000001
+ff search 600519 --sources news --days 7
+ff search 300750 --limit 50
+
+# 知识星球（需先配置 Cookie）
+ff config --cookie-zsxq "zsxq_access_token=你的token"
+ff zsxq list
+ff zsxq fetch --days 7
+ff zsxq search 茅台
+
+# 雪球社区帖子（需安装 Playwright）
+ff xueqiu search SH600519
+ff xueqiu search SZ000858 --sort alpha --pages 5
+ff xueqiu search SH600519 --before 2026-01-01
+```
+
+## 数据存储
+
+```
+~/.fundamental-data/
+├── <stock_code>/    公告/研报/新闻（按股票代码分类）
+├── zsxq/<星球名>/    知识星球内容
+├── search/<关键词>/  星球搜索结果
+└── xueqiu/<symbol>/ 雪球社区帖子
+```
+
+所有结果以 JSON 格式存储。
+
+## 配置知识星球
+
+1. 浏览器登录 [wx.zsxq.com](https://wx.zsxq.com)
+2. F12 → Application → Cookies → `wx.zsxq.com`
+3. 复制 `zsxq_access_token` 的值
+4. 执行：
+
+```bash
+ff config --cookie-zsxq "zsxq_access_token=复制的值"
+```
+
+## 数据源
+
+| 数据源 | 内容 | 认证 | 技术 |
+|--------|------|------|------|
+| 巨潮资讯 cninfo.com.cn | 公司公告 | 无 | HTTP API |
+| 东方财富 eastmoney.com | 券商研报 + 财经新闻 | 无 | HTTP API |
+| 知识星球 zsxq.com | 星球讨论/分析帖 | Cookie | HTTP API |
+| 雪球 xueqiu.com | 社区讨论帖 | 无 | Playwright 浏览器 |
+
+## 命令参考
+
+```
+ff search <code>    搜索股票（公告+研报+新闻）
+  --sources         数据源: all/announcements/reports/news
+  --days            搜索范围（默认 30 天）
+  --limit           每个来源最多条数（默认 30）
+
+ff zsxq list        列出已加入的星球
+ff zsxq fetch       拉取星球最新内容
+  --days            最近几天（默认 7）
+  --limit           最大条数（默认 200）
+
+ff zsxq search <keyword>  搜索星球历史内容
+  --limit           最大条数（默认 50）
+
+ff xueqiu search <symbol>  抓取雪球社区帖子
+  --pages           抓取页数（默认 3）
+  --sort            time/alpha 排序
+  --before          日期过滤 YYYY-MM-DD
+  --limit           每页条数（默认 20）
+
+ff config           查看或修改配置
+  --cookie-zsxq     设置知识星球 Cookie
+```
+
+## 项目结构
+
+```
+src/
+├── cli.py            CLI 入口（click）
+├── config.py         配置管理（TOML）
+├── models.py         数据模型（FetchResult）
+├── storage.py        JSON 存储 + 去重
+├── fetchers/
+│   ├── base.py       抽象基类
+│   ├── cninfo.py     巨潮资讯
+│   ├── eastmoney.py  东方财富
+│   ├── zsxq.py       知识星球
+│   ├── xueqiu.py     雪球（Playwright 浏览器）
+│   └── xueqiu_models.py  雪球数据模型
+└── utils/
+    ├── http.py       HTTP 客户端
+    └── date.py       日期工具
+SKILL.md              Claude Code 技能定义
+CLAUDE.md             项目文档
+```
