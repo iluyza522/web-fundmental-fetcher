@@ -157,7 +157,7 @@ def zsxq_list(ctx):
 @zsxq.command("fetch")
 @click.option("--group", default=None, help="星球 Group ID（不指定则拉取全部）")
 @click.option("--days", default=7, type=int, help="最近几天")
-@click.option("--limit", default=200, type=int, help="最大拉取条数")
+@click.option("--limit", default=40, type=int, help="最大拉取条数")
 @click.option("--exclude/--no-exclude", default=True, help="按屏蔽词过滤帖子")
 @click.pass_context
 def zsxq_fetch(ctx, group, days, limit, exclude):
@@ -185,7 +185,11 @@ def zsxq_fetch(ctx, group, days, limit, exclude):
     exclude_kw = EXCLUDE_KEYWORDS if exclude else None
 
     async def run():
-        results = await fetcher.fetch(since=since, limit=limit)
+        try:
+            results = await fetcher.fetch(since=since, limit=limit)
+        except RuntimeError as e:
+            click.echo(f"error: {e}", err=True)
+            return
         saved = 0
         # Track latest message per group for history update
         latest_per_group: dict[str, tuple[str, str]] = {}
@@ -206,6 +210,8 @@ def zsxq_fetch(ctx, group, days, limit, exclude):
             history.update(gname, ts, txt)
         if saved:
             click.echo(f"zsxq: {saved} new items")
+        else:
+            click.echo("zsxq: no new items")
 
     asyncio.run(run())
 

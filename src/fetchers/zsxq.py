@@ -77,13 +77,13 @@ class ZsxqFetcher(Fetcher):
                 data = resp.json()
                 # Log API error if present
                 if not isinstance(data, dict):
-                    logger.warning(f"groups API returned non-dict: {type(data).__name__}")
+                    text = resp.text[:500]
+                    logger.warning(f"groups API non-dict (attempt {attempt+1}): {text}")
                     continue
                 if "succeeded" in data and not data["succeeded"]:
                     err = data.get("error", {})
                     msg = err.get("message", "unknown") if isinstance(err, dict) else err
-                    logger.warning(f"groups API error: {msg}")
-                    continue
+                    raise RuntimeError(f"ZSXQ API error: {msg}")
                 groups = data.get("resp_data", {}).get("groups", [])
                 if groups:
                     break
