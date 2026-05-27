@@ -16,6 +16,7 @@ from src.fetchers.xueqiu import XueqiuScraper, SortBy
 from src.fetchers.quote import fetch_market_cap
 from src.xueqiu_exclude import EXCLUDE_KEYWORDS
 from src.models import FetchResult, SourceType
+from src.zsxq_history import ZsxqHistory
 from src.utils.http import create_client
 
 
@@ -180,21 +181,31 @@ def zsxq_fetch(ctx, group, days, limit, exclude):
 
     storage: Storage = ctx.obj["storage"]
     fetcher = ZsxqFetcher(cookie=cfg.zsxq_cookie)
-
+    history = ZsxqHistory(cfg.data_dir)
     exclude_kw = EXCLUDE_KEYWORDS if exclude else None
 
     async def run():
         results = await fetcher.fetch(since=since, limit=limit)
         saved = 0
+        # Track latest message per group for history update
+        latest_per_group: dict[str, tuple[str, str]] = {}
         for r in results:
             if group and r.group_name != group:
                 continue
             if exclude_kw and any(kw in r.content or kw in r.title for kw in exclude_kw):
                 continue
-            storage.save(r)
-            saved += 1
+            if history.is_new(r.group_name, r.published_at, r.content):
+                storage.save(r)
+                saved += 1
+            # Track newest for history
+            prev = latest_per_group.get(r.group_name)
+            if not prev or r.published_at > prev[0]:
+                latest_per_group[r.group_name] = (r.published_at, r.content)
+        # Persist latest seen per group
+        for gname, (ts, txt) in latest_per_group.items():
+            history.update(gname, ts, txt)
         if saved:
-            click.echo(f"zsxq: {saved} items")
+            click.echo(f"zsxq: {saved} new items")
 
     asyncio.run(run())
 
