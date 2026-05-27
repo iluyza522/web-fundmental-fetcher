@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 from typing import Optional
 from urllib.parse import unquote
 
 import httpx
-
-logger = logging.getLogger(__name__)
 
 from src.fetchers.base import Fetcher
 from src.models import FetchResult, SourceType
@@ -62,43 +59,27 @@ class ZsxqFetcher(Fetcher):
         since: Optional[str] = None,
         limit: int = 200,
     ) -> list[FetchResult]:
-        import random
         results: list[FetchResult] = []
         async with create_client(cookie=self.cookie) as client:
-            # Must call groups first in the same session; zsxq API is
-            # aggressive with rate limiting — randomize delays
+            # Must call groups first in the same session; zsxq API may
+            # rate-limit and return empty groups — retry a few times
             groups: list[dict] = []
             for attempt in range(5):
-                await asyncio.sleep(random.uniform(1, 3))
                 resp = await client.get("https://api.zsxq.com/v2/groups")
                 if resp.status_code != 200:
-                    logger.warning(f"groups API status={resp.status_code}, retry {attempt+1}")
+                    await asyncio.sleep(2)
                     continue
-                data = resp.json()
-                # Log API error if present
-                if not isinstance(data, dict):
-                    text = resp.text[:500]
-                    logger.warning(f"groups API non-dict (attempt {attempt+1}): {text}")
-                    continue
-                if "succeeded" in data and not data["succeeded"]:
-                    err = data.get("error", {})
-                    msg = err.get("message", "unknown") if isinstance(err, dict) else err
-                    raise RuntimeError(f"ZSXQ API error: {msg}")
-                groups = data.get("resp_data", {}).get("groups", [])
+                groups = resp.json().get("resp_data", {}).get("groups", [])
                 if groups:
                     break
+                await asyncio.sleep(1.5)
 
             for group in groups:
                 group_id = group.get("group_id")
                 name = group.get("name", "")
-                try:
-                    topics = await self._fetch_topics(
-                        client, group_id, limit - len(results)
-                    )
-                except RuntimeError:
-                    raise
-                except Exception:
-                    continue
+                topics = await self._fetch_topics(
+                    client, group_id, limit - len(results)
+                )
                 for t in topics:
                     if since and t.get("create_time", "")[:10] < since:
                         continue
@@ -126,40 +107,19 @@ class ZsxqFetcher(Fetcher):
         end_id = None
 
         while len(topics) < limit:
-            params: dict = {"count": min(limit - len(topics), 40)}
+            params: dict = {"count": min(limit - len(topics), 20)}
             if end_id:
                 params["end_id"] = end_id
 
-            for attempt in range(3):
-                try:
-                    resp = await client.get(url, params=params)
-                    if resp.status_code != 200:
-                        if attempt < 2:
-                            await asyncio.sleep(2)
-                            continue
-                        resp.raise_for_status()
-                    data = resp.json()
-                    if not isinstance(data, dict):
-                        logger.warning(f"topics API non-dict (attempt {attempt+1})")
-                        if attempt < 2:
-                            await asyncio.sleep(2)
-                            continue
-                        return topics
-                    if not data.get("succeeded", True):
-                        err = data.get("error", {})
-                        msg = err.get("message", "unknown") if isinstance(err, dict) else err
-                        raise RuntimeError(f"ZSXQ topics API error: {msg}")
-                    break
-                except RuntimeError:
-                    raise
-                except Exception:
-                    if attempt < 2:
-                        await asyncio.sleep(2)
-                        continue
-                    return topics
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            try:
+                data = resp.json()
+            except Exception:
+                # zsxq API 偶尔返回非 UTF-8 响应，跳过这批
+                break
             items = data.get("resp_data", {}).get("topics", [])
             if not items:
-                logger.info(f"No more topics for group {group_id}")
                 break
 
             for item in items:
