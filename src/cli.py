@@ -157,8 +157,9 @@ def zsxq_list(ctx):
 @click.option("--group", default=None, help="星球 Group ID（不指定则拉取全部）")
 @click.option("--days", default=7, type=int, help="最近几天")
 @click.option("--limit", default=200, type=int, help="最大拉取条数")
+@click.option("--exclude/--no-exclude", default=True, help="按屏蔽词过滤帖子")
 @click.pass_context
-def zsxq_fetch(ctx, group, days, limit):
+def zsxq_fetch(ctx, group, days, limit, exclude):
     """拉取知识星球最新内容
 
     遍历所有或指定星球，拉取最新讨论话题并存入 data/zsxq/ 目录。
@@ -180,11 +181,15 @@ def zsxq_fetch(ctx, group, days, limit):
     storage: Storage = ctx.obj["storage"]
     fetcher = ZsxqFetcher(cookie=cfg.zsxq_cookie)
 
+    exclude_kw = EXCLUDE_KEYWORDS if exclude else None
+
     async def run():
         results = await fetcher.fetch(since=since, limit=limit)
         saved = 0
         for r in results:
             if group and r.group_name != group:
+                continue
+            if exclude_kw and any(kw in r.content or kw in r.title for kw in exclude_kw):
                 continue
             storage.save(r)
             saved += 1
@@ -197,8 +202,9 @@ def zsxq_fetch(ctx, group, days, limit):
 @zsxq.command("search")
 @click.argument("keyword")
 @click.option("--limit", default=50, type=int, help="最大返回条数")
+@click.option("--exclude/--no-exclude", default=True, help="按屏蔽词过滤帖子")
 @click.pass_context
-def zsxq_search(ctx, keyword, limit):
+def zsxq_search(ctx, keyword, limit, exclude):
     """搜索知识星球历史内容
 
     使用知识星球内置搜索引擎搜索所有历史内容（不限时间范围），
@@ -215,6 +221,7 @@ def zsxq_search(ctx, keyword, limit):
         return
 
     fetcher = ZsxqFetcher(cookie=cfg.zsxq_cookie)
+    exclude_kw = EXCLUDE_KEYWORDS if exclude else None
 
     async def run():
         async with create_client(cookie=cfg.zsxq_cookie) as client:
@@ -236,11 +243,15 @@ def zsxq_search(ctx, keyword, limit):
                     keyword, group_id=gid, limit=limit, client=client
                 )
                 for t in topics:
+                    text = t.get("text", "")
+                    title = t.get("title", "")
+                    if exclude_kw and any(kw in text or kw in title for kw in exclude_kw):
+                        continue
                     ts = (t.get("create_time") or "")[:19]
                     r = FetchResult(
                         source=SourceType.ZSXQ,
-                        title=t.get("title", ""),
-                        content=t.get("text", ""),
+                        title=title,
+                        content=text,
                         published_at=ts,
                         url=f"https://wx.zsxq.com/topic/{t.get('topic_id', '')}",
                         group_name=name,
