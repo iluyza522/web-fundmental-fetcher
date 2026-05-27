@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from typing import Optional
 from urllib.parse import unquote
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from src.fetchers.base import Fetcher
 from src.models import FetchResult, SourceType
@@ -59,20 +62,26 @@ class ZsxqFetcher(Fetcher):
         since: Optional[str] = None,
         limit: int = 200,
     ) -> list[FetchResult]:
+        import random
         results: list[FetchResult] = []
         async with create_client(cookie=self.cookie) as client:
-            # Must call groups first in the same session; zsxq API may
-            # rate-limit and return empty groups — retry a few times
+            # Must call groups first in the same session; zsxq API is
+            # aggressive with rate limiting — randomize delays
             groups: list[dict] = []
             for attempt in range(5):
+                await asyncio.sleep(random.uniform(1, 3))
                 resp = await client.get("https://api.zsxq.com/v2/groups")
                 if resp.status_code != 200:
-                    await asyncio.sleep(2)
+                    logger.warning(f"groups API status={resp.status_code}, retry {attempt+1}")
                     continue
-                groups = resp.json().get("resp_data", {}).get("groups", [])
+                data = resp.json()
+                # Log API error if present
+                if "succeeded" in data and not data["succeeded"]:
+                    logger.warning(f"groups API error: {data.get('error', {}).get('message', 'unknown')}")
+                    continue
+                groups = data.get("resp_data", {}).get("groups", [])
                 if groups:
                     break
-                await asyncio.sleep(1.5)
 
             for group in groups:
                 group_id = group.get("group_id")
