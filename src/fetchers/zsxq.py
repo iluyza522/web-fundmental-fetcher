@@ -95,6 +95,8 @@ class ZsxqFetcher(Fetcher):
                     topics = await self._fetch_topics(
                         client, group_id, limit - len(results)
                     )
+                except RuntimeError:
+                    raise
                 except Exception:
                     continue
                 for t in topics:
@@ -137,15 +139,27 @@ class ZsxqFetcher(Fetcher):
                             continue
                         resp.raise_for_status()
                     data = resp.json()
+                    if not isinstance(data, dict):
+                        logger.warning(f"topics API non-dict (attempt {attempt+1})")
+                        if attempt < 2:
+                            await asyncio.sleep(2)
+                            continue
+                        return topics
+                    if not data.get("succeeded", True):
+                        err = data.get("error", {})
+                        msg = err.get("message", "unknown") if isinstance(err, dict) else err
+                        raise RuntimeError(f"ZSXQ topics API error: {msg}")
                     break
+                except RuntimeError:
+                    raise
                 except Exception:
                     if attempt < 2:
                         await asyncio.sleep(2)
                         continue
-                    # All retries exhausted, skip this batch
                     return topics
             items = data.get("resp_data", {}).get("topics", [])
             if not items:
+                logger.info(f"No more topics for group {group_id}")
                 break
 
             for item in items:
