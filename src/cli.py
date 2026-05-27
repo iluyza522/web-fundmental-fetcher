@@ -13,6 +13,7 @@ from src.fetchers.cninfo import CninfoFetcher
 from src.fetchers.eastmoney import EastmoneyReportFetcher, EastmoneyNewsFetcher
 from src.fetchers.zsxq import ZsxqFetcher
 from src.fetchers.xueqiu import XueqiuScraper, SortBy
+from src.fetchers.quote import fetch_market_cap
 from src.models import FetchResult, SourceType
 from src.utils.http import create_client
 
@@ -40,6 +41,7 @@ def main(ctx, config):
         ff zsxq list                 列出星球
         ff zsxq fetch                拉取星球内容
         ff zsxq search 先导基电       搜索星球历史
+        ff quote 600519              获取贵州茅台当前市值
     """
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
@@ -97,6 +99,25 @@ def search(ctx, stock_code, sources, days, limit):
     asyncio.run(run())
     if total:
         click.echo(f"search: {total} items")
+
+
+@main.command()
+@click.argument("stock_code")
+def quote(stock_code):
+    """获取股票当前市值
+
+    从东方财富实时行情接口获取指定股票的总市值和当前股价。
+
+    示例:
+        ff quote 600519    贵州茅台市值
+        ff quote 000001    平安银行市值
+    """
+
+    async def run():
+        q = await fetch_market_cap(stock_code)
+        click.echo(f"{q.stock_name}({q.stock_code}) 总市值: {q.market_cap_str}")
+
+    asyncio.run(run())
 
 
 @main.group()
@@ -222,6 +243,10 @@ def zsxq_search(ctx, keyword, limit):
                         published_at=ts,
                         url=f"https://wx.zsxq.com/topic/{t.get('topic_id', '')}",
                         group_name=name,
+                        metadata={
+                            "images": t.get("images", []),
+                            "files": t.get("files", []),
+                        },
                     )
                     # Save to data/search/<keyword>/<YYYY-MM>/<id>.json
                     month = ts[:7]
@@ -242,6 +267,140 @@ def zsxq_search(ctx, keyword, limit):
 @click.pass_context
 def xueqiu(ctx):
     """雪球社区帖子抓取"""
+
+
+@xueqiu.command("hot")
+@click.option("--pages", default=3, type=int, help="抓取页数")
+@click.option("--headless/--no-headless", default=True)
+@click.pass_context
+def xueqiu_hot(ctx, pages, headless):
+    """抓取雪球首页热门帖子
+
+    从雪球首页抓取算法推荐的热门帖子（全站热门，不限个股）。
+
+    示例:
+        ff xueqiu hot              抓取首页热门（默认3页）
+        ff xueqiu hot --pages 5    抓取5页
+    """
+    from datetime import datetime
+    import json
+
+    cfg = ctx.obj["config"]
+    output_dir = cfg.data_dir / "xueqiu" / "hot"
+
+    async def run():
+        async with XueqiuScraper(headless=headless) as scraper:
+            posts = await scraper.get_hot_posts(max_pages=pages)
+            data = {
+                "type": "hot",
+                "total_posts": len(posts),
+                "scraped_at": datetime.now().isoformat(),
+                "posts": [
+                    {
+                        "id": p.id,
+                        "created_at": p.created_at,
+                        "datetime": p.created_datetime.isoformat(),
+                        "user": {
+                            "id": p.user.id,
+                            "name": p.user.screen_name,
+                            "profile": p.user.profile,
+                            "followers": p.user.followers_count,
+                        },
+                        "title": p.title,
+                        "content": p.cleaned_text,
+                        "source": p.source,
+                        "stats": {
+                            "replies": p.reply_count,
+                            "likes": p.like_count,
+                            "views": p.view_count,
+                            "favorites": p.fav_count,
+                            "retweets": p.retweet_count,
+                        },
+                    }
+                    for p in posts
+                ],
+            }
+            output_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filepath = output_dir / f"hot_{timestamp}.json"
+            filepath.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+            click.echo(f"xueqiu hot: {len(posts)} posts -> {filepath}")
+
+    asyncio.run(run())
+
+
+@xueqiu.command("kw")
+@click.argument("keyword")
+@click.option("--pages", default=3, type=int, help="抓取页数")
+@click.option("--sort", type=click.Choice(["time", "alpha"]), default="time",
+              help="time=最新 alpha=综合")
+@click.option("--limit", default=10, type=int, help="每页条数")
+@click.option("--headless/--no-headless", default=True)
+@click.pass_context
+def xueqiu_kw(ctx, keyword, pages, sort, limit, headless):
+    """按关键词搜索雪球帖子
+
+    使用雪球搜索引擎按关键词搜索全站帖子。
+
+    示例:
+        ff xueqiu kw 预期             搜索"预期"相关帖子
+        ff xueqiu kw 半导体 --pages 5 搜索5页
+        ff xueqiu kw 光伏 --sort alpha 按综合排序
+    """
+    from datetime import datetime
+    import json
+
+    cfg = ctx.obj["config"]
+    output_dir = cfg.data_dir / "xueqiu" / "search" / keyword
+
+    sort_by = SortBy.ALPHA if sort == "alpha" else SortBy.TIME
+
+    async def run():
+        async with XueqiuScraper(headless=headless) as scraper:
+            posts = await scraper.search_posts(
+                keyword=keyword,
+                max_pages=pages,
+                count=limit,
+                sort=sort_by,
+            )
+            data = {
+                "type": "search",
+                "keyword": keyword,
+                "sort": sort,
+                "total_posts": len(posts),
+                "scraped_at": datetime.now().isoformat(),
+                "posts": [
+                    {
+                        "id": p.id,
+                        "created_at": p.created_at,
+                        "datetime": p.created_datetime.isoformat(),
+                        "user": {
+                            "id": p.user.id,
+                            "name": p.user.screen_name,
+                            "profile": p.user.profile,
+                            "followers": p.user.followers_count,
+                        },
+                        "title": p.title,
+                        "content": p.cleaned_text,
+                        "source": p.source,
+                        "stats": {
+                            "replies": p.reply_count,
+                            "likes": p.like_count,
+                            "views": p.view_count,
+                            "favorites": p.fav_count,
+                            "retweets": p.retweet_count,
+                        },
+                    }
+                    for p in posts
+                ],
+            }
+            output_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filepath = output_dir / f"search_{timestamp}.json"
+            filepath.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+            click.echo(f"xueqiu search: {len(posts)} posts -> {filepath}")
+
+    asyncio.run(run())
 
 
 @xueqiu.command("search")

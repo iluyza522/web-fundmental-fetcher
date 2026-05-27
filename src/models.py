@@ -14,6 +14,26 @@ class SourceType(str, Enum):
     ZSXQ = "zsxq"
 
 
+def _format_market_cap(value_yuan: float) -> str:
+    """Format market cap in human-readable Chinese units."""
+    if value_yuan >= 1e12:
+        return f"{value_yuan / 1e12:.2f}万亿"
+    if value_yuan >= 1e8:
+        return f"{value_yuan / 1e8:.2f}亿"
+    if value_yuan >= 1e4:
+        return f"{value_yuan / 1e4:.2f}万"
+    return f"{value_yuan:.2f}元"
+
+
+@dataclass
+class StockQuote:
+    stock_code: str
+    stock_name: str
+    market_cap: float
+    market_cap_str: str
+    updated_at: str
+
+
 def _compute_id(source: str, title: str, published_at: str) -> str:
     raw = f"{source}|{title}|{published_at}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]

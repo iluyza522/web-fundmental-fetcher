@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 from typing import Optional
+from urllib.parse import unquote
 
 import httpx
 
@@ -13,6 +14,20 @@ from src.models import FetchResult, SourceType
 from src.utils.http import create_client
 
 _TAG_RE = re.compile(r"<[^>]+>")
+_LINK_RE = re.compile(r'<e\s+type="web"\s+href="([^"]+)"[^>]*/?>')
+
+
+def _extract_links_and_clean(text: str) -> str:
+    """从 zsxq 富文本中提取链接，拼接到文本末尾，再清除 HTML 标签。"""
+    links = []
+    for m in _LINK_RE.finditer(text):
+        href = unquote(m.group(1))
+        links.append(href)
+
+    cleaned = _TAG_RE.sub("", text).strip()
+    if links:
+        cleaned += "\n\n链接:\n" + "\n".join(links)
+    return cleaned
 
 
 class ZsxqFetcher(Fetcher):
@@ -25,10 +40,17 @@ class ZsxqFetcher(Fetcher):
 
     async def list_groups(self) -> list[dict]:
         async with create_client(cookie=self.cookie) as client:
-            resp = await client.get("https://api.zsxq.com/v2/groups")
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("resp_data", {}).get("groups", [])
+            for attempt in range(5):
+                resp = await client.get("https://api.zsxq.com/v2/groups")
+                if resp.status_code != 200:
+                    await asyncio.sleep(2)
+                    continue
+                data = resp.json()
+                groups = data.get("resp_data", {}).get("groups", [])
+                if groups:
+                    return groups
+                await asyncio.sleep(1.5)
+            return []
 
     async def fetch(
         self,
@@ -39,10 +61,18 @@ class ZsxqFetcher(Fetcher):
     ) -> list[FetchResult]:
         results: list[FetchResult] = []
         async with create_client(cookie=self.cookie) as client:
-            # Must call groups first in the same session
-            resp = await client.get("https://api.zsxq.com/v2/groups")
-            resp.raise_for_status()
-            groups = resp.json().get("resp_data", {}).get("groups", [])
+            # Must call groups first in the same session; zsxq API may
+            # rate-limit and return empty groups — retry a few times
+            groups: list[dict] = []
+            for attempt in range(5):
+                resp = await client.get("https://api.zsxq.com/v2/groups")
+                if resp.status_code != 200:
+                    await asyncio.sleep(2)
+                    continue
+                groups = resp.json().get("resp_data", {}).get("groups", [])
+                if groups:
+                    break
+                await asyncio.sleep(1.5)
 
             for group in groups:
                 group_id = group.get("group_id")
@@ -61,6 +91,10 @@ class ZsxqFetcher(Fetcher):
                             published_at=(t.get("create_time") or "")[:19],
                             url=f"https://wx.zsxq.com/topic/{t.get('topic_id', '')}",
                             group_name=name,
+                            metadata={
+                                "images": t.get("images", []),
+                                "files": t.get("files", []),
+                            },
                         )
                     )
         return results[:limit]
@@ -79,7 +113,11 @@ class ZsxqFetcher(Fetcher):
 
             resp = await client.get(url, params=params)
             resp.raise_for_status()
-            data = resp.json()
+            try:
+                data = resp.json()
+            except Exception:
+                # zsxq API 偶尔返回非 UTF-8 响应，跳过这批
+                break
             items = data.get("resp_data", {}).get("topics", [])
             if not items:
                 break
@@ -88,17 +126,43 @@ class ZsxqFetcher(Fetcher):
                 talk = item.get("talk", {})
                 raw = talk.get("text", "")
                 if isinstance(raw, str):
-                    full_text = _TAG_RE.sub("", raw).strip()
+                    full_text = _extract_links_and_clean(raw)
                 else:
                     full_text = "".join(
                         p.get("text", "") for p in raw if isinstance(p, dict)
                     )
+
+                # Extract images
+                images = []
+                for img in talk.get("images", []):
+                    orig = img.get("original", {}) or {}
+                    large = img.get("large", {}) or {}
+                    url = orig.get("url") or large.get("url", "")
+                    if url:
+                        images.append({
+                            "url": url,
+                            "width": orig.get("width"),
+                            "height": orig.get("height"),
+                        })
+
+                # Extract file attachments
+                files = []
+                for f in talk.get("files", []):
+                    files.append({
+                        "name": f.get("name", ""),
+                        "size": f.get("size", 0),
+                        "url": f.get("url", ""),
+                        "download_url": f.get("download_url", ""),
+                    })
+
                 topics.append(
                     {
                         "title": (full_text[:80] or "无标题"),
                         "text": full_text,
                         "create_time": item.get("create_time", ""),
                         "topic_id": item.get("topic_id", ""),
+                        "images": images,
+                        "files": files,
                     }
                 )
                 if len(topics) >= limit:
@@ -143,12 +207,36 @@ class ZsxqFetcher(Fetcher):
                 for item in items:
                     talk = item.get("talk", {})
                     raw = talk.get("text", "")
-                    full_text = _TAG_RE.sub("", raw).strip() if isinstance(raw, str) else ""
+                    full_text = _extract_links_and_clean(raw) if isinstance(raw, str) else ""
+
+                    images = []
+                    for img in talk.get("images", []):
+                        orig = img.get("original", {}) or {}
+                        large = img.get("large", {}) or {}
+                        url = orig.get("url") or large.get("url", "")
+                        if url:
+                            images.append({
+                                "url": url,
+                                "width": orig.get("width"),
+                                "height": orig.get("height"),
+                            })
+
+                    files = []
+                    for f in talk.get("files", []):
+                        files.append({
+                            "name": f.get("name", ""),
+                            "size": f.get("size", 0),
+                            "url": f.get("url", ""),
+                            "download_url": f.get("download_url", ""),
+                        })
+
                     topics.append({
                         "title": (full_text[:80] or "无标题"),
                         "text": full_text,
                         "create_time": item.get("create_time", ""),
                         "topic_id": item.get("topic_id", ""),
+                        "images": images,
+                        "files": files,
                     })
                     if len(topics) >= limit:
                         break

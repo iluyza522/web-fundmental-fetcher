@@ -122,7 +122,9 @@ class XueqiuScraper:
         result = await self._page.evaluate(js_code)
 
         if isinstance(result, dict) and "error" in result:
-            raise RuntimeError(f"API call failed: {result['error']}")
+            raise RuntimeError(
+                f"API call failed: {result['error']} (url: {url})"
+            )
 
         return result
 
@@ -366,6 +368,93 @@ class XueqiuScraper:
         except Exception:
             pass
         return 0
+
+    async def get_hot_posts(self, max_pages: int = 3) -> list[CommunityPost]:
+        """Fetch hot/trending posts from the Xueqiu homepage.
+
+        Uses the /statuses/hot/listV3.json endpoint which returns the
+        algorithmically ranked hot posts shown on the homepage.
+
+        Args:
+            max_pages: Maximum pages to fetch (each page ~20 posts).
+        """
+        # Start session (navigates to homepage to pass WAF)
+        if not self._page or not self._browser:
+            await self.start()
+
+        # Use the anonymous recommend API (works without login).
+        # category=205 is the homepage "recommended" feed.
+        last_id = ""
+        all_posts = []
+        for p in range(1, max_pages + 1):
+            try:
+                params = {"category": 205, "page": p}
+                if last_id:
+                    params["last_id"] = last_id
+                data = await self._api_call(
+                    "/recommend-proxy/anonymous_recommend.json",
+                    params,
+                )
+                items = data.get("list", [])
+                posts = [self._parse_post(item) for item in items]
+                all_posts.extend(posts)
+                logger.info(f"Fetched hot page {p}: {len(posts)} posts")
+                if not items:
+                    break
+                # Use last_id for cursor-based pagination
+                last_id = items[-1].get("id", "") if items else ""
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.error(f"Failed to fetch hot page {p}: {e}")
+                break
+
+        return all_posts
+
+    async def search_posts(
+        self,
+        keyword: str,
+        max_pages: int = 3,
+        count: int = 10,
+        sort: SortBy = SortBy.TIME,
+    ) -> list[CommunityPost]:
+        """Search Xueqiu posts by keyword.
+
+        Uses the /query/v1/search/status.json endpoint.
+
+        Args:
+            keyword: Search keyword.
+            max_pages: Maximum pages to fetch.
+            count: Posts per page (default 10).
+            sort: SortBy.TIME (latest) or SortBy.ALPHA (comprehensive).
+        """
+        if not self._page or not self._browser:
+            await self.start()
+
+        # sortId: 1=comprehensive, 2=latest
+        sort_id = 2 if sort == SortBy.TIME else 1
+
+        all_posts = []
+        for p in range(1, max_pages + 1):
+            try:
+                data = await self._api_call(
+                    "/query/v1/search/status.json",
+                    {"q": keyword, "sortId": sort_id, "count": count, "page": p},
+                )
+                items = data.get("list", [])
+                posts = [self._parse_post(item) for item in items]
+                all_posts.extend(posts)
+                logger.info(
+                    f"Searched page {p}/{data.get('maxPage', '?')}: "
+                    f"{len(posts)} posts"
+                )
+                if not items or p >= data.get("maxPage", p):
+                    break
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                logger.error(f"Failed to search page {p}: {e}")
+                break
+
+        return all_posts
 
     async def get_stock_info(self, symbol: str) -> dict:
         """Get basic stock quote info."""
