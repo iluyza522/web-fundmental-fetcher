@@ -271,9 +271,11 @@ def xueqiu(ctx):
 
 @xueqiu.command("hot")
 @click.option("--pages", default=3, type=int, help="抓取页数")
+@click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
+@click.option("--min-length", default=300, type=int, help="帖子最少字数")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_hot(ctx, pages, headless):
+def xueqiu_hot(ctx, pages, min_followers, min_length, headless):
     """抓取雪球首页热门帖子
 
     从雪球首页抓取算法推荐的热门帖子（全站热门，不限个股）。
@@ -291,6 +293,10 @@ def xueqiu_hot(ctx, pages, headless):
     async def run():
         async with XueqiuScraper(headless=headless) as scraper:
             posts = await scraper.get_hot_posts(max_pages=pages)
+            if min_followers:
+                posts = [p for p in posts if p.user.followers_count >= min_followers]
+            if min_length:
+                posts = [p for p in posts if len(p.cleaned_text) >= min_length]
             data = {
                 "type": "hot",
                 "total_posts": len(posts),
@@ -335,9 +341,11 @@ def xueqiu_hot(ctx, pages, headless):
 @click.option("--sort", type=click.Choice(["time", "alpha"]), default="time",
               help="time=最新 alpha=综合")
 @click.option("--limit", default=10, type=int, help="每页条数")
+@click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
+@click.option("--min-length", default=300, type=int, help="帖子最少字数")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_kw(ctx, keyword, pages, sort, limit, headless):
+def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, min_length, headless):
     """按关键词搜索雪球帖子
 
     使用雪球搜索引擎按关键词搜索全站帖子。
@@ -363,6 +371,10 @@ def xueqiu_kw(ctx, keyword, pages, sort, limit, headless):
                 count=limit,
                 sort=sort_by,
             )
+            if min_followers:
+                posts = [p for p in posts if p.user.followers_count >= min_followers]
+            if min_length:
+                posts = [p for p in posts if len(p.cleaned_text) >= min_length]
             data = {
                 "type": "search",
                 "keyword": keyword,
@@ -410,9 +422,11 @@ def xueqiu_kw(ctx, keyword, pages, sort, limit, headless):
               help="time=最新 alpha=热帖")
 @click.option("--before", help="日期过滤 YYYY-MM-DD")
 @click.option("--limit", default=20, type=int, help="每页条数")
+@click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
+@click.option("--min-length", default=300, type=int, help="帖子最少字数")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_search(ctx, symbol, pages, sort, before, limit, headless):
+def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, min_length, headless):
     """抓取雪球社区帖子
 
     使用浏览器自动化绕过 WAF，抓取雪球个股社区讨论帖。
@@ -450,11 +464,16 @@ def xueqiu_search(ctx, symbol, pages, sort, before, limit, headless):
                 sort=sort_by,
                 before=before_ts,
             )
+            posts = community.posts
+            if min_followers:
+                posts = [p for p in posts if p.user.followers_count >= min_followers]
+            if min_length:
+                posts = [p for p in posts if len(p.cleaned_text) >= min_length]
             data = {
                 "symbol": symbol,
                 "stock_name": community.stock_name,
                 "total_followers": community.total_followers,
-                "total_posts": len(community.posts),
+                "total_posts": len(posts),
                 "before_filter": before,
                 "scraped_at": datetime.now().isoformat(),
                 "posts": [
@@ -477,14 +496,14 @@ def xueqiu_search(ctx, symbol, pages, sort, before, limit, headless):
                             "favorites": p.fav_count,
                         },
                     }
-                    for p in community.posts
+                    for p in posts
                 ],
             }
             output_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = output_dir / f"{symbol}_community_{timestamp}.json"
             filepath.write_text(json.dumps(data, ensure_ascii=False, indent=2))
-            click.echo(f"xueqiu: {len(community.posts)} posts")
+            click.echo(f"xueqiu: {len(posts)} posts")
 
     asyncio.run(run())
 
