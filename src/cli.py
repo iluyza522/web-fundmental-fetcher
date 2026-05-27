@@ -272,11 +272,12 @@ def xueqiu(ctx):
 @xueqiu.command("hot")
 @click.option("--pages", default=3, type=int, help="抓取页数")
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
+@click.option("--max-followers", default=10000, type=int, help="贴主最大粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
 @click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_hot(ctx, pages, min_followers, min_length, show_print, headless):
+def xueqiu_hot(ctx, pages, min_followers, max_followers, min_length, show_print, headless):
     """抓取雪球首页热门帖子
 
     从雪球首页抓取算法推荐的热门帖子（全站热门，不限个股）。
@@ -296,6 +297,8 @@ def xueqiu_hot(ctx, pages, min_followers, min_length, show_print, headless):
             posts = await scraper.get_hot_posts(max_pages=pages)
             if min_followers:
                 posts = [p for p in posts if p.user.followers_count >= min_followers]
+            if max_followers:
+                posts = [p for p in posts if p.user.followers_count <= max_followers]
             if min_length:
                 posts = [p for p in posts if len(p.cleaned_text) >= min_length]
             data = {
@@ -347,11 +350,12 @@ def xueqiu_hot(ctx, pages, min_followers, min_length, show_print, headless):
               help="time=最新 alpha=综合")
 @click.option("--limit", default=10, type=int, help="每页条数")
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
+@click.option("--max-followers", default=10000, type=int, help="贴主最大粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
 @click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, min_length, show_print, headless):
+def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, max_followers, min_length, show_print, headless):
     """按关键词搜索雪球帖子
 
     使用雪球搜索引擎按关键词搜索全站帖子。
@@ -379,6 +383,8 @@ def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, min_length, show_
             )
             if min_followers:
                 posts = [p for p in posts if p.user.followers_count >= min_followers]
+            if max_followers:
+                posts = [p for p in posts if p.user.followers_count <= max_followers]
             if min_length:
                 posts = [p for p in posts if len(p.cleaned_text) >= min_length]
             data = {
@@ -433,11 +439,12 @@ def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, min_length, show_
 @click.option("--before", help="日期过滤 YYYY-MM-DD")
 @click.option("--limit", default=20, type=int, help="每页条数")
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
+@click.option("--max-followers", default=10000, type=int, help="贴主最大粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
 @click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, min_length, show_print, headless):
+def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, max_followers, min_length, show_print, headless):
     """抓取雪球社区帖子
 
     使用浏览器自动化绕过 WAF，抓取雪球个股社区讨论帖。
@@ -478,6 +485,8 @@ def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, min_le
             posts = community.posts
             if min_followers:
                 posts = [p for p in posts if p.user.followers_count >= min_followers]
+            if max_followers:
+                posts = [p for p in posts if p.user.followers_count <= max_followers]
             if min_length:
                 posts = [p for p in posts if len(p.cleaned_text) >= min_length]
             data = {
