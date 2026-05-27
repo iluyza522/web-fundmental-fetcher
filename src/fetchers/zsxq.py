@@ -119,7 +119,7 @@ class ZsxqFetcher(Fetcher):
         end_id = None
 
         while len(topics) < limit:
-            params: dict = {"count": min(limit - len(topics), 20)}
+            params: dict = {"count": min(limit - len(topics), 40)}
             if end_id:
                 params["end_id"] = end_id
 
