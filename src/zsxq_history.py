@@ -10,7 +10,7 @@ class ZsxqHistory:
     """Persist latest message info per group to detect new messages."""
 
     def __init__(self, data_dir: Path):
-        self._path = data_dir / "zsxq" / "history.json"
+        self._path = data_dir / "history.json"
         self._data: dict[str, dict] = self._load()
 
     def _load(self) -> dict[str, dict]:

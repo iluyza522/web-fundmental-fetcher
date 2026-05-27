@@ -218,7 +218,7 @@ def zsxq_fetch(ctx, group, days, limit, exclude, show_print):
         if show_print:
             for r in saved_items:
                 click.echo(f"\n--- [{r.group_name}] {r.published_at[:10]} ---")
-                click.echo(r.content[:500])
+                click.echo(r.content)
 
     asyncio.run(run())
 
@@ -310,7 +310,7 @@ def xueqiu(ctx):
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
 @click.option("--max-followers", default=10000, type=int, help="贴主最大粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
-@click.option("--max-total-length", default=40000, type=int, help="所有帖子累计最大总字数")
+@click.option("--max-total-length", default=20000, type=int, help="所有帖子累计最大总字数")
 @click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
 @click.option("--exclude/--no-exclude", default=True, help="按屏蔽词过滤帖子")
 @click.option("--headless/--no-headless", default=True)
@@ -393,7 +393,7 @@ def xueqiu_hot(ctx, pages, min_followers, max_followers, min_length, max_total_l
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
 @click.option("--max-followers", default=10000, type=int, help="贴主最大粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
-@click.option("--max-total-length", default=40000, type=int, help="所有帖子累计最大总字数")
+@click.option("--max-total-length", default=20000, type=int, help="所有帖子累计最大总字数")
 @click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
 @click.option("--exclude/--no-exclude", default=True, help="按屏蔽词过滤帖子")
 @click.option("--headless/--no-headless", default=True)
@@ -485,7 +485,7 @@ def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, max_followers, mi
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
 @click.option("--max-followers", default=10000, type=int, help="贴主最大粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
-@click.option("--max-total-length", default=40000, type=int, help="所有帖子累计最大总字数")
+@click.option("--max-total-length", default=20000, type=int, help="所有帖子累计最大总字数")
 @click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
 @click.option("--exclude/--no-exclude", default=True, help="按屏蔽词过滤帖子")
 @click.option("--headless/--no-headless", default=True)
