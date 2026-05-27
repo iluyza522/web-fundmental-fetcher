@@ -273,9 +273,10 @@ def xueqiu(ctx):
 @click.option("--pages", default=3, type=int, help="抓取页数")
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
+@click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_hot(ctx, pages, min_followers, min_length, headless):
+def xueqiu_hot(ctx, pages, min_followers, min_length, show_print, headless):
     """抓取雪球首页热门帖子
 
     从雪球首页抓取算法推荐的热门帖子（全站热门，不限个股）。
@@ -331,6 +332,10 @@ def xueqiu_hot(ctx, pages, min_followers, min_length, headless):
             filepath = output_dir / f"hot_{timestamp}.json"
             filepath.write_text(json.dumps(data, ensure_ascii=False, indent=2))
             click.echo(f"xueqiu hot: {len(posts)} posts -> {filepath}")
+            if show_print:
+                for p in posts:
+                    click.echo(f"\n--- {p.user.screen_name} (粉丝:{p.user.followers_count}) ---")
+                    click.echo(p.cleaned_text[:500])
 
     asyncio.run(run())
 
@@ -343,9 +348,10 @@ def xueqiu_hot(ctx, pages, min_followers, min_length, headless):
 @click.option("--limit", default=10, type=int, help="每页条数")
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
+@click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, min_length, headless):
+def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, min_length, show_print, headless):
     """按关键词搜索雪球帖子
 
     使用雪球搜索引擎按关键词搜索全站帖子。
@@ -411,6 +417,10 @@ def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, min_length, headl
             filepath = output_dir / f"search_{timestamp}.json"
             filepath.write_text(json.dumps(data, ensure_ascii=False, indent=2))
             click.echo(f"xueqiu search: {len(posts)} posts -> {filepath}")
+            if show_print:
+                for p in posts:
+                    click.echo(f"\n--- {p.user.screen_name} (粉丝:{p.user.followers_count}) ---")
+                    click.echo(p.cleaned_text[:500])
 
     asyncio.run(run())
 
@@ -424,9 +434,10 @@ def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, min_length, headl
 @click.option("--limit", default=20, type=int, help="每页条数")
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
+@click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, min_length, headless):
+def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, min_length, show_print, headless):
     """抓取雪球社区帖子
 
     使用浏览器自动化绕过 WAF，抓取雪球个股社区讨论帖。
@@ -504,6 +515,10 @@ def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, min_le
             filepath = output_dir / f"{symbol}_community_{timestamp}.json"
             filepath.write_text(json.dumps(data, ensure_ascii=False, indent=2))
             click.echo(f"xueqiu: {len(posts)} posts")
+            if show_print:
+                for p in posts:
+                    click.echo(f"\n--- {p.user.screen_name} (粉丝:{p.user.followers_count}) ---")
+                    click.echo(p.cleaned_text[:500])
 
     asyncio.run(run())
 
