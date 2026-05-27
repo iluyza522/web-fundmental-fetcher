@@ -287,6 +287,12 @@ class XueqiuScraper:
         posts_per_page: int = 20,
         sort: SortBy = SortBy.TIME,
         before: int | None = None,
+        *,
+        min_followers: int = 0,
+        max_followers: int = 0,
+        min_length: int = 0,
+        exclude_keywords: list[str] | None = None,
+        max_total_length: int = 0,
     ) -> StockCommunity:
         """Fetch complete stock community data with metadata.
 
@@ -296,6 +302,11 @@ class XueqiuScraper:
             posts_per_page: Posts per page
             sort: Sort order
             before: Unix timestamp (ms) — only return posts older than this.
+            min_followers: Minimum follower count (0 = no filter).
+            max_followers: Maximum follower count (0 = no filter).
+            min_length: Minimum post content length (0 = no filter).
+            exclude_keywords: Keywords to filter out posts.
+            max_total_length: Stop when total chars exceed this (0 = no limit).
         """
         if before and sort == SortBy.ALPHA:
             logger.info("alpha sort + before: hot posts span a wide time range, "
@@ -305,7 +316,8 @@ class XueqiuScraper:
 
         total_followers = await self._get_total_followers()
 
-        all_posts = []
+        all_posts: list[CommunityPost] = []
+        total_chars = 0
         total_count = 0
         hit_boundary = False
         for p in range(1, max_pages + 1):
@@ -323,26 +335,37 @@ class XueqiuScraper:
                     total_count = response.count
 
                 kept = 0
-                if before:
-                    for post in response.items:
-                        if post.created_at < before:
-                            all_posts.append(post)
-                            kept += 1
-                    # Early-stop only for time sort (chronological order)
-                    if sort == SortBy.TIME and response.items and all(
-                        post.created_at < before for post in response.items
-                    ):
-                        hit_boundary = True
-                else:
-                    all_posts.extend(response.items)
-                    kept = len(response.items)
+                for post in response.items:
+                    if before and post.created_at >= before:
+                        continue
+                    if min_followers and post.user.followers_count < min_followers:
+                        continue
+                    if max_followers and post.user.followers_count > max_followers:
+                        continue
+                    if min_length and len(post.cleaned_text) < min_length:
+                        continue
+                    if exclude_keywords and any(kw in post.cleaned_text or kw in post.title for kw in exclude_keywords):
+                        continue
+                    all_posts.append(post)
+                    kept += 1
+                    total_chars += len(post.cleaned_text)
+                    if max_total_length and total_chars >= max_total_length:
+                        break
+
+                # Early-stop for time sort + before filter
+                if before and sort == SortBy.TIME and response.items and all(
+                    post.created_at >= before for post in response.items
+                ):
+                    hit_boundary = True
 
                 logger.info(
                     f"Fetched page {p}: {len(response.items)} posts "
-                    f"(kept {kept})"
+                    f"(kept {kept}, total_chars={total_chars})"
                 )
-                # No more pages available
                 if not response.items:
+                    break
+                if max_total_length and total_chars >= max_total_length:
+                    logger.info(f"Reached max_total_length={max_total_length}, stopping")
                     break
                 await asyncio.sleep(0.5)
             except Exception as e:
@@ -369,7 +392,16 @@ class XueqiuScraper:
             pass
         return 0
 
-    async def get_hot_posts(self, max_pages: int = 3) -> list[CommunityPost]:
+    async def get_hot_posts(
+        self,
+        max_pages: int = 3,
+        *,
+        min_followers: int = 0,
+        max_followers: int = 0,
+        min_length: int = 0,
+        exclude_keywords: list[str] | None = None,
+        max_total_length: int = 0,
+    ) -> list[CommunityPost]:
         """Fetch hot/trending posts from the Xueqiu homepage.
 
         Uses the /statuses/hot/listV3.json endpoint which returns the
@@ -377,6 +409,11 @@ class XueqiuScraper:
 
         Args:
             max_pages: Maximum pages to fetch (each page ~20 posts).
+            min_followers: Minimum follower count (0 = no filter).
+            max_followers: Maximum follower count (0 = no filter).
+            min_length: Minimum post content length (0 = no filter).
+            exclude_keywords: Keywords to filter out posts.
+            max_total_length: Stop when total chars exceed this (0 = no limit).
         """
         # Start session (navigates to homepage to pass WAF)
         if not self._page or not self._browser:
@@ -385,7 +422,8 @@ class XueqiuScraper:
         # Use the anonymous recommend API (works without login).
         # category=205 is the homepage "recommended" feed.
         last_id = ""
-        all_posts = []
+        all_posts: list[CommunityPost] = []
+        total_chars = 0
         for p in range(1, max_pages + 1):
             try:
                 params = {"category": 205, "page": p}
@@ -396,10 +434,27 @@ class XueqiuScraper:
                     params,
                 )
                 items = data.get("list", [])
-                posts = [self._parse_post(item) for item in items]
-                all_posts.extend(posts)
-                logger.info(f"Fetched hot page {p}: {len(posts)} posts")
+                page_posts = [self._parse_post(item) for item in items]
+                logger.info(f"Fetched hot page {p}: {len(page_posts)} posts")
+
+                for post in page_posts:
+                    if min_followers and post.user.followers_count < min_followers:
+                        continue
+                    if max_followers and post.user.followers_count > max_followers:
+                        continue
+                    if min_length and len(post.cleaned_text) < min_length:
+                        continue
+                    if exclude_keywords and any(kw in post.cleaned_text or kw in post.title for kw in exclude_keywords):
+                        continue
+                    all_posts.append(post)
+                    total_chars += len(post.cleaned_text)
+                    if max_total_length and total_chars >= max_total_length:
+                        break
+
                 if not items:
+                    break
+                if max_total_length and total_chars >= max_total_length:
+                    logger.info(f"Reached max_total_length={max_total_length}, stopping")
                     break
                 # Use last_id for cursor-based pagination
                 last_id = items[-1].get("id", "") if items else ""
@@ -416,6 +471,12 @@ class XueqiuScraper:
         max_pages: int = 3,
         count: int = 10,
         sort: SortBy = SortBy.TIME,
+        *,
+        min_followers: int = 0,
+        max_followers: int = 0,
+        min_length: int = 0,
+        exclude_keywords: list[str] | None = None,
+        max_total_length: int = 0,
     ) -> list[CommunityPost]:
         """Search Xueqiu posts by keyword.
 
@@ -426,6 +487,11 @@ class XueqiuScraper:
             max_pages: Maximum pages to fetch.
             count: Posts per page (default 10).
             sort: SortBy.TIME (latest) or SortBy.ALPHA (comprehensive).
+            min_followers: Minimum follower count (0 = no filter).
+            max_followers: Maximum follower count (0 = no filter).
+            min_length: Minimum post content length (0 = no filter).
+            exclude_keywords: Keywords to filter out posts.
+            max_total_length: Stop when total chars exceed this (0 = no limit).
         """
         if not self._page or not self._browser:
             await self.start()
@@ -433,7 +499,8 @@ class XueqiuScraper:
         # sortId: 1=comprehensive, 2=latest
         sort_id = 2 if sort == SortBy.TIME else 1
 
-        all_posts = []
+        all_posts: list[CommunityPost] = []
+        total_chars = 0
         for p in range(1, max_pages + 1):
             try:
                 data = await self._api_call(
@@ -441,13 +508,30 @@ class XueqiuScraper:
                     {"q": keyword, "sortId": sort_id, "count": count, "page": p},
                 )
                 items = data.get("list", [])
-                posts = [self._parse_post(item) for item in items]
-                all_posts.extend(posts)
+                page_posts = [self._parse_post(item) for item in items]
+
+                for post in page_posts:
+                    if min_followers and post.user.followers_count < min_followers:
+                        continue
+                    if max_followers and post.user.followers_count > max_followers:
+                        continue
+                    if min_length and len(post.cleaned_text) < min_length:
+                        continue
+                    if exclude_keywords and any(kw in post.cleaned_text or kw in post.title for kw in exclude_keywords):
+                        continue
+                    all_posts.append(post)
+                    total_chars += len(post.cleaned_text)
+                    if max_total_length and total_chars >= max_total_length:
+                        break
+
                 logger.info(
                     f"Searched page {p}/{data.get('maxPage', '?')}: "
-                    f"{len(posts)} posts"
+                    f"{len(page_posts)} posts -> kept {len(all_posts)}"
                 )
                 if not items or p >= data.get("maxPage", p):
+                    break
+                if max_total_length and total_chars >= max_total_length:
+                    logger.info(f"Reached max_total_length={max_total_length}, stopping")
                     break
                 await asyncio.sleep(0.5)
             except Exception as e:

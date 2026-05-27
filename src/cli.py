@@ -14,6 +14,7 @@ from src.fetchers.eastmoney import EastmoneyReportFetcher, EastmoneyNewsFetcher
 from src.fetchers.zsxq import ZsxqFetcher
 from src.fetchers.xueqiu import XueqiuScraper, SortBy
 from src.fetchers.quote import fetch_market_cap
+from src.xueqiu_exclude import EXCLUDE_KEYWORDS
 from src.models import FetchResult, SourceType
 from src.utils.http import create_client
 
@@ -270,14 +271,16 @@ def xueqiu(ctx):
 
 
 @xueqiu.command("hot")
-@click.option("--pages", default=3, type=int, help="抓取页数")
+@click.option("--pages", default=999, type=int, help="最大抓取页数")
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
 @click.option("--max-followers", default=10000, type=int, help="贴主最大粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
+@click.option("--max-total-length", default=40000, type=int, help="所有帖子累计最大总字数")
 @click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
+@click.option("--exclude/--no-exclude", default=True, help="按屏蔽词过滤帖子")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_hot(ctx, pages, min_followers, max_followers, min_length, show_print, headless):
+def xueqiu_hot(ctx, pages, min_followers, max_followers, min_length, max_total_length, show_print, exclude, headless):
     """抓取雪球首页热门帖子
 
     从雪球首页抓取算法推荐的热门帖子（全站热门，不限个股）。
@@ -292,15 +295,18 @@ def xueqiu_hot(ctx, pages, min_followers, max_followers, min_length, show_print,
     cfg = ctx.obj["config"]
     output_dir = cfg.data_dir / "xueqiu" / "hot"
 
+    exclude_kw = EXCLUDE_KEYWORDS if exclude else None
+
     async def run():
         async with XueqiuScraper(headless=headless) as scraper:
-            posts = await scraper.get_hot_posts(max_pages=pages)
-            if min_followers:
-                posts = [p for p in posts if p.user.followers_count >= min_followers]
-            if max_followers:
-                posts = [p for p in posts if p.user.followers_count <= max_followers]
-            if min_length:
-                posts = [p for p in posts if len(p.cleaned_text) >= min_length]
+            posts = await scraper.get_hot_posts(
+                max_pages=pages,
+                min_followers=min_followers,
+                max_followers=max_followers,
+                min_length=min_length,
+                exclude_keywords=exclude_kw,
+                max_total_length=max_total_length,
+            )
             data = {
                 "type": "hot",
                 "total_posts": len(posts),
@@ -338,24 +344,26 @@ def xueqiu_hot(ctx, pages, min_followers, max_followers, min_length, show_print,
             if show_print:
                 for p in posts:
                     click.echo(f"\n--- {p.user.screen_name} (粉丝:{p.user.followers_count}) ---")
-                    click.echo(p.cleaned_text[:500])
+                    click.echo(p.cleaned_text)
 
     asyncio.run(run())
 
 
 @xueqiu.command("kw")
 @click.argument("keyword")
-@click.option("--pages", default=3, type=int, help="抓取页数")
+@click.option("--pages", default=999, type=int, help="最大抓取页数")
 @click.option("--sort", type=click.Choice(["time", "alpha"]), default="time",
               help="time=最新 alpha=综合")
 @click.option("--limit", default=10, type=int, help="每页条数")
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
 @click.option("--max-followers", default=10000, type=int, help="贴主最大粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
+@click.option("--max-total-length", default=40000, type=int, help="所有帖子累计最大总字数")
 @click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
+@click.option("--exclude/--no-exclude", default=True, help="按屏蔽词过滤帖子")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, max_followers, min_length, show_print, headless):
+def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, max_followers, min_length, max_total_length, show_print, exclude, headless):
     """按关键词搜索雪球帖子
 
     使用雪球搜索引擎按关键词搜索全站帖子。
@@ -373,6 +381,8 @@ def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, max_followers, mi
 
     sort_by = SortBy.ALPHA if sort == "alpha" else SortBy.TIME
 
+    exclude_kw = EXCLUDE_KEYWORDS if exclude else None
+
     async def run():
         async with XueqiuScraper(headless=headless) as scraper:
             posts = await scraper.search_posts(
@@ -380,13 +390,12 @@ def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, max_followers, mi
                 max_pages=pages,
                 count=limit,
                 sort=sort_by,
+                min_followers=min_followers,
+                max_followers=max_followers,
+                min_length=min_length,
+                exclude_keywords=exclude_kw,
+                max_total_length=max_total_length,
             )
-            if min_followers:
-                posts = [p for p in posts if p.user.followers_count >= min_followers]
-            if max_followers:
-                posts = [p for p in posts if p.user.followers_count <= max_followers]
-            if min_length:
-                posts = [p for p in posts if len(p.cleaned_text) >= min_length]
             data = {
                 "type": "search",
                 "keyword": keyword,
@@ -426,14 +435,14 @@ def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, max_followers, mi
             if show_print:
                 for p in posts:
                     click.echo(f"\n--- {p.user.screen_name} (粉丝:{p.user.followers_count}) ---")
-                    click.echo(p.cleaned_text[:500])
+                    click.echo(p.cleaned_text)
 
     asyncio.run(run())
 
 
 @xueqiu.command("search")
 @click.argument("symbol")
-@click.option("--pages", default=3, type=int, help="抓取页数")
+@click.option("--pages", default=999, type=int, help="最大抓取页数")
 @click.option("--sort", type=click.Choice(["time", "alpha"]), default="time",
               help="time=最新 alpha=热帖")
 @click.option("--before", help="日期过滤 YYYY-MM-DD")
@@ -441,10 +450,12 @@ def xueqiu_kw(ctx, keyword, pages, sort, limit, min_followers, max_followers, mi
 @click.option("--min-followers", default=500, type=int, help="贴主最少粉丝数")
 @click.option("--max-followers", default=10000, type=int, help="贴主最大粉丝数")
 @click.option("--min-length", default=300, type=int, help="帖子最少字数")
+@click.option("--max-total-length", default=40000, type=int, help="所有帖子累计最大总字数")
 @click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
+@click.option("--exclude/--no-exclude", default=True, help="按屏蔽词过滤帖子")
 @click.option("--headless/--no-headless", default=True)
 @click.pass_context
-def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, max_followers, min_length, show_print, headless):
+def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, max_followers, min_length, max_total_length, show_print, exclude, headless):
     """抓取雪球社区帖子
 
     使用浏览器自动化绕过 WAF，抓取雪球个股社区讨论帖。
@@ -472,6 +483,7 @@ def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, max_fo
             return
 
     sort_by = SortBy.ALPHA if sort == "alpha" else SortBy.TIME
+    exclude_kw = EXCLUDE_KEYWORDS if exclude else None
 
     async def run():
         async with XueqiuScraper(headless=headless) as scraper:
@@ -481,14 +493,13 @@ def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, max_fo
                 posts_per_page=limit,
                 sort=sort_by,
                 before=before_ts,
+                min_followers=min_followers,
+                max_followers=max_followers,
+                min_length=min_length,
+                exclude_keywords=exclude_kw,
+                max_total_length=max_total_length,
             )
             posts = community.posts
-            if min_followers:
-                posts = [p for p in posts if p.user.followers_count >= min_followers]
-            if max_followers:
-                posts = [p for p in posts if p.user.followers_count <= max_followers]
-            if min_length:
-                posts = [p for p in posts if len(p.cleaned_text) >= min_length]
             data = {
                 "symbol": symbol,
                 "stock_name": community.stock_name,
@@ -527,7 +538,7 @@ def xueqiu_search(ctx, symbol, pages, sort, before, limit, min_followers, max_fo
             if show_print:
                 for p in posts:
                     click.echo(f"\n--- {p.user.screen_name} (粉丝:{p.user.followers_count}) ---")
-                    click.echo(p.cleaned_text[:500])
+                    click.echo(p.cleaned_text)
 
     asyncio.run(run())
 
