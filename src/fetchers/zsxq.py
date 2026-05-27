@@ -77,9 +77,12 @@ class ZsxqFetcher(Fetcher):
             for group in groups:
                 group_id = group.get("group_id")
                 name = group.get("name", "")
-                topics = await self._fetch_topics(
-                    client, group_id, limit - len(results)
-                )
+                try:
+                    topics = await self._fetch_topics(
+                        client, group_id, limit - len(results)
+                    )
+                except Exception:
+                    continue
                 for t in topics:
                     if since and t.get("create_time", "")[:10] < since:
                         continue
@@ -111,13 +114,22 @@ class ZsxqFetcher(Fetcher):
             if end_id:
                 params["end_id"] = end_id
 
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            try:
-                data = resp.json()
-            except Exception:
-                # zsxq API 偶尔返回非 UTF-8 响应，跳过这批
-                break
+            for attempt in range(3):
+                try:
+                    resp = await client.get(url, params=params)
+                    if resp.status_code != 200:
+                        if attempt < 2:
+                            await asyncio.sleep(2)
+                            continue
+                        resp.raise_for_status()
+                    data = resp.json()
+                    break
+                except Exception:
+                    if attempt < 2:
+                        await asyncio.sleep(2)
+                        continue
+                    # All retries exhausted, skip this batch
+                    return topics
             items = data.get("resp_data", {}).get("topics", [])
             if not items:
                 break
