@@ -159,8 +159,9 @@ def zsxq_list(ctx):
 @click.option("--days", default=7, type=int, help="最近几天")
 @click.option("--limit", default=40, type=int, help="最大拉取条数")
 @click.option("--exclude/--no-exclude", default=True, help="按屏蔽词过滤帖子")
+@click.option("--print", "show_print", is_flag=True, help="在命令行打印帖子内容")
 @click.pass_context
-def zsxq_fetch(ctx, group, days, limit, exclude):
+def zsxq_fetch(ctx, group, days, limit, exclude, show_print):
     """拉取知识星球最新内容
 
     遍历所有或指定星球，拉取最新讨论话题并存入 data/zsxq/ 目录。
@@ -191,6 +192,7 @@ def zsxq_fetch(ctx, group, days, limit, exclude):
             click.echo(f"error: {e}", err=True)
             return
         saved = 0
+        saved_items: list[FetchResult] = []
         # Track latest message per group for history update
         latest_per_group: dict[str, tuple[str, str]] = {}
         for r in results:
@@ -201,6 +203,7 @@ def zsxq_fetch(ctx, group, days, limit, exclude):
             if history.is_new(r.group_name, r.published_at, r.content):
                 storage.save(r)
                 saved += 1
+                saved_items.append(r)
             # Track newest for history
             prev = latest_per_group.get(r.group_name)
             if not prev or r.published_at > prev[0]:
@@ -212,6 +215,10 @@ def zsxq_fetch(ctx, group, days, limit, exclude):
             click.echo(f"zsxq: {saved} new items")
         else:
             click.echo("zsxq: no new items")
+        if show_print:
+            for r in saved_items:
+                click.echo(f"\n--- [{r.group_name}] {r.published_at[:10]} ---")
+                click.echo(r.content[:500])
 
     asyncio.run(run())
 
